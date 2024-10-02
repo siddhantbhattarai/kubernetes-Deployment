@@ -30,12 +30,6 @@ Disable swap on both master and worker nodes to ensure Kubernetes functions prop
 sudo swapoff -a
 ```
 
-To make this change persistent across reboots, comment out any swap entries in `/etc/fstab`:
-
-```bash
-sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
-```
-
 ### 2. Load Kernel Modules
 
 Create a `.conf` file to load the required kernel modules on both nodes at boot:
