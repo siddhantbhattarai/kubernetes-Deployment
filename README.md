@@ -11,6 +11,12 @@ This guide outlines the steps to install a Kubernetes cluster with one master no
 - **Azure VMs** with 8 GB RAM (BS series) for both master and worker nodes.
 - **Root (sudo) privileges** on both nodes.
 - **Port 6443** opened for Kubernetes API communication.
+
+## Prepare the Azure Environment
+1. **Security Group Configuration**:
+   - Make sure both VMs (master and worker) are in the same network (Azure VNet) or allow communication between them.
+   - Open port 6443 on the security group to allow worker nodes to communicate with the master node.
+     - In Azure, configure the Network Security Group (NSG) to allow inbound traffic on port 6443 (Kubernetes API).
   
 ---
 
