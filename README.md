@@ -134,5 +134,3 @@ This completes the basic Kubernetes setup using `kubeadm` on Azure VMs.
 3. Initialize the master node and install a network plugin (Calico).
 4. Join the worker node to the master using the `kubeadm join` command.
 5. Verify the cluster setup by checking the nodes and deploying a test pod.
-
-Let me know if you need help with any specific part of the process!
