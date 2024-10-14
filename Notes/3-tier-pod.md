@@ -1,0 +1,247 @@
+Setting up a **3-tier application** in Kubernetes involves deploying separate Pods for the **frontend**, **backend**, and **database** layers, and ensuring these Pods can communicate with each other. This is a common pattern in web applications where:
+
+- **Frontend**: The user interface (UI), usually a web server or React/Angular application.
+- **Backend**: The server-side logic and APIs that handle data processing.
+- **Database**: The database where persistent data is stored.
+
+We will deploy each of these components in separate Pods, expose the services, and link them together.
+
+### Overview of Steps:
+
+1. **Create Pods** for the frontend, backend, and database.
+2. **Expose Services** to allow communication between the tiers.
+3. **Setup Network** communication between the layers (frontend talks to backend, backend talks to database).
+4. **Configure Environment Variables** for service discovery.
+
+---
+
+### Step-by-Step Guide: Setting Up a 3-Tier Application
+
+Let’s assume the following:
+- Frontend: A React app running in a Docker container.
+- Backend: A Node.js API server.
+- Database: MySQL for storing data.
+
+---
+
+### Step 1: Deploy the Database (MySQL)
+
+Create a YAML manifest for the **MySQL** Pod and Service. MySQL will need a persistent volume for storage, but for simplicity, we’ll focus on the Pod setup first.
+
+```yaml
+# mysql-pod.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mysql-pod
+  labels:
+    tier: database
+spec:
+  containers:
+  - name: mysql-container
+    image: mysql:5.7
+    env:
+    - name: MYSQL_ROOT_PASSWORD
+      value: rootpassword
+    - name: MYSQL_DATABASE
+      value: mydb
+    - name: MYSQL_USER
+      value: user
+    - name: MYSQL_PASSWORD
+      value: password
+    ports:
+    - containerPort: 3306
+```
+
+- **image**: We are using the official MySQL Docker image.
+- **env**: Environment variables are used to set up the MySQL database, user, and password.
+
+Next, create a **Service** for MySQL so that other Pods (like the backend) can connect to it:
+
+```yaml
+# mysql-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-service
+spec:
+  selector:
+    tier: database
+  ports:
+  - protocol: TCP
+    port: 3306
+    targetPort: 3306
+```
+
+- **selector**: This links the service to the `mysql-pod` using the `tier: database` label.
+- **ports**: It exposes port `3306`, which MySQL listens to.
+
+Apply the manifest files:
+```bash
+kubectl apply -f mysql-pod.yaml
+kubectl apply -f mysql-service.yaml
+```
+
+---
+
+### Step 2: Deploy the Backend (Node.js API)
+
+The backend will be responsible for handling API requests and communicating with the MySQL database.
+
+Create a YAML manifest for the **Node.js backend**:
+
+```yaml
+# backend-pod.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: backend-pod
+  labels:
+    tier: backend
+spec:
+  containers:
+  - name: backend-container
+    image: siddhantbhattarai/react-backend-api # Your backend Docker image
+    env:
+    - name: DB_HOST
+      value: mysql-service # This is the service name of MySQL
+    - name: DB_USER
+      value: user
+    - name: DB_PASSWORD
+      value: password
+    - name: DB_NAME
+      value: mydb
+    ports:
+    - containerPort: 5000
+```
+
+- **image**: This is your backend Docker image.
+- **env**: Environment variables are used to configure the backend to communicate with MySQL. Notice that we use the service name `mysql-service` to connect to the MySQL database.
+- **ports**: The backend listens on port `5000`.
+
+Create a **Service** for the backend so the frontend can communicate with it:
+
+```yaml
+# backend-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+spec:
+  selector:
+    tier: backend
+  ports:
+  - protocol: TCP
+    port: 5000
+    targetPort: 5000
+```
+
+Apply the backend manifest files:
+```bash
+kubectl apply -f backend-pod.yaml
+kubectl apply -f backend-service.yaml
+```
+
+---
+
+### Step 3: Deploy the Frontend (React)
+
+Now, we’ll deploy the frontend, which will be a React application that communicates with the backend API.
+
+Create a YAML manifest for the **React frontend**:
+
+```yaml
+# frontend-pod.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: frontend-pod
+  labels:
+    tier: frontend
+spec:
+  containers:
+  - name: frontend-container
+    image: siddhantbhattarai/react-education-website # Your React Docker image
+    env:
+    - name: REACT_APP_API_URL
+      value: http://backend-service:5000 # The service name for the backend
+    ports:
+    - containerPort: 80
+```
+
+- **image**: This is your React frontend Docker image.
+- **env**: The `REACT_APP_API_URL` environment variable is set to the backend’s service, so the frontend can send API requests to the backend.
+- **ports**: The frontend listens on port `80`.
+
+Create a **Service** for the frontend, so users can access it from outside the cluster:
+
+```yaml
+# frontend-service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+spec:
+  type: NodePort # Exposes the frontend outside the cluster
+  selector:
+    tier: frontend
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80
+```
+
+Apply the frontend manifest files:
+```bash
+kubectl apply -f frontend-pod.yaml
+kubectl apply -f frontend-service.yaml
+```
+
+---
+
+### Step 4: Verify the Setup
+
+You can check if everything is running using:
+```bash
+kubectl get pods
+kubectl get services
+```
+
+Make sure all Pods are in the **Running** state, and services are correctly exposed.
+
+---
+
+### Step 5: Access the Application
+
+You can access the **frontend** by checking the NodePort that Kubernetes assigned. Run:
+
+```bash
+kubectl get services
+```
+
+For example:
+```
+NAME              TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)        AGE
+frontend-service  NodePort    10.104.101.50   <none>        80:30000/TCP   2m
+backend-service   ClusterIP   10.99.208.77    <none>        5000/TCP       2m
+mysql-service     ClusterIP   10.96.133.123   <none>        3306/TCP       2m
+```
+
+You’ll see that the **frontend-service** has a **NodePort** like `30000`. You can now access the frontend from your browser by navigating to `http://<NodeIP>:30000`.
+
+---
+
+### How the 3-Tier Application Works:
+1. **Frontend**: The user interacts with the React frontend. It sends API requests to the backend using the backend’s service (`backend-service`).
+2. **Backend**: The backend processes the requests and fetches data from the MySQL database via the `mysql-service`.
+3. **Database**: The MySQL database stores and retrieves the data requested by the backend.
+
+---
+
+### Summary:
+
+- We set up a **3-tier architecture** with separate Pods for the **frontend**, **backend**, and **database**.
+- Services were created to allow communication between Pods and expose the frontend to the external world.
+- Environment variables were used to configure the backend and frontend to communicate with each other and the database.
+
+This example can be adapted to any 3-tier application. You can replace the frontend, backend, or database images with your own. 
