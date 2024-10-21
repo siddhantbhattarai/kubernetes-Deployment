@@ -265,9 +265,7 @@ sudo kubeadm reset pre-flight checks
 Use the join command provided by the master node to add the worker node to the cluster:
 
 ```bash
-sudo kubeadm join <master-ip>:6443 --token <token> --discovery-token-ca-cert-hash sha256:<hash> --v=
-
-5
+sudo kubeadm join <master-ip>:6443 --token <token> --discovery-token-ca-cert-hash sha256:<hash> --v=5
 ```
 
 ---
