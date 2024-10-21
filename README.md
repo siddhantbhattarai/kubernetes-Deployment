@@ -115,6 +115,8 @@ Kubernetes uses container runtimes to run the actual containers. Here, we will u
 
 ```bash
 sudo apt-get update -y
+```
+```bash
 sudo apt-get install -y software-properties-common curl apt-transport-https ca-certificates gpg
 ```
 
@@ -134,9 +136,10 @@ echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.i
 
 ```bash
 sudo apt-get update -y
+```
+```bash
 sudo apt-get install -y cri-o
 ```
-
 5. **Enable and start the CRI-O service:**
 
 ```bash
@@ -173,6 +176,8 @@ echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.
 
 ```bash
 sudo apt-get update -y
+```
+```bash
 sudo apt-get install -y kubelet kubeadm kubectl
 sudo apt-mark hold kubelet kubeadm kubectl
 ```
