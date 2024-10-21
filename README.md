@@ -1,38 +1,71 @@
-Here’s a complete step-by-step documentation combining all the instructions for setting up a Kubernetes cluster using `kubeadm` on Azure virtual machines (both master and worker nodes).
+# 🚀 Kubernetes Cluster Setup Using `kubeadm` on Azure VMs
+
+Kubernetes is a powerful tool for container orchestration, making it easy to deploy, manage, and scale containerized applications. In this guide, we will set up a Kubernetes cluster using `kubeadm` on Azure VMs, with **CRI-O** as the container runtime and **Calico** as the network plugin.
+
+## 🔍 Overview
+
+### Tools You Will Use:
+- **`kubeadm`**: A tool to bootstrap a Kubernetes cluster.
+- **`kubelet`**: An agent that runs on each node and makes sure that containers are running as expected.
+- **`kubectl`**: A command-line tool to interact with the Kubernetes cluster.
+
+### Cluster Components:
+- **Master Node**: Manages the Kubernetes control plane.
+- **Worker Node(s)**: Where the containers (pods) will run.
 
 ---
 
-# Kubernetes Cluster Setup Using `kubeadm` on Azure VMs
+## 🛠️ Prerequisites
 
-This guide outlines the steps to install a Kubernetes cluster with one master node and one or more worker nodes using `kubeadm`. We will use CRI-O as the container runtime and Calico for network management.
+Before you begin, ensure that the following prerequisites are met:
 
-## Prerequisites:
-- **Ubuntu OS** (Xenial or later) on both master and worker nodes.
-- **Azure VMs** with 8 GB RAM (BS series) for both master and worker nodes.
+- **Operating System**: Ubuntu 16.04 (Xenial) or later on both master and worker nodes.
+- **VM Resources**: Each VM (master and worker nodes) should have at least 8 GB of RAM (Azure B-series VMs are recommended).
+- **Network Access**: Both VMs should be in the same Azure VNet, or you should configure them to communicate with each other.
+- **Open Port 6443**: This port needs to be opened for API server communication between the master and worker nodes.
 - **Root (sudo) privileges** on both nodes.
-- **Port 6443** opened for Kubernetes API communication.
 
-## Prepare the Azure Environment
-1. **Security Group Configuration**:
-   - Make sure both VMs (master and worker) are in the same network (Azure VNet) or allow communication between them.
-   - Open port 6443 on the security group to allow worker nodes to communicate with the master node.
-     - In Azure, configure the Network Security Group (NSG) to allow inbound traffic on port 6443 (Kubernetes API).
-  
 ---
 
-## Steps for Both Master and Worker Nodes
+## 🏗️ Step 1: Prepare the Azure Environment
 
-### 1. Disable Swap
+### 1.1 Configure Azure Network Security Group (NSG)
 
-Disable swap on both master and worker nodes to ensure Kubernetes functions properly.
+To allow proper communication between your nodes, ensure that both VMs are in the same **Azure VNet** or can communicate through their public IP addresses. Additionally, open **port 6443** in the Network Security Group (NSG) for inbound traffic, as this port is required for the Kubernetes API server to communicate with worker nodes.
+
+You can configure this using Azure Portal or Azure CLI. For CLI users:
+
+```bash
+az network nsg rule create --nsg-name <your-nsg-name> --resource-group <your-resource-group> --name k8s-api-rule --protocol Tcp --priority 1000 --destination-port-ranges 6443 --access Allow
+```
+
+---
+
+## ⚙️ Step 2: Setup on Both Master and Worker Nodes
+
+For these steps, perform them **on both the master and worker nodes**.
+
+### 2.1 Disable Swap
+
+Kubernetes does not support running with swap enabled. Disabling swap ensures Kubernetes runs correctly.
 
 ```bash
 sudo swapoff -a
 ```
 
-### 2. Load Kernel Modules
+To make this permanent, comment out or remove the swap line in `/etc/fstab`.
 
-Create a `.conf` file to load the required kernel modules on both nodes at boot:
+```bash
+sudo sed -i '/ swap / s/^/#/' /etc/fstab
+```
+
+---
+
+### 2.2 Load Kernel Modules
+
+Kubernetes requires specific kernel modules to manage networking and container storage. These modules should be loaded both at boot and immediately.
+
+1. **Create a config file to load kernel modules at boot:**
 
 ```bash
 cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
@@ -41,16 +74,20 @@ br_netfilter
 EOF
 ```
 
-Then manually load the modules:
+2. **Manually load the required modules:**
 
 ```bash
 sudo modprobe overlay
 sudo modprobe br_netfilter
 ```
 
-### 3. Configure Sysctl Parameters
+---
 
-Configure `sysctl` parameters required for Kubernetes networking on both nodes:
+### 2.3 Configure Sysctl for Kubernetes Networking
+
+Kubernetes networking relies on specific kernel parameters. These parameters need to be set up to enable proper traffic routing between pods.
+
+1. **Create a sysctl config file:**
 
 ```bash
 cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
@@ -60,31 +97,47 @@ net.ipv4.ip_forward                 = 1
 EOF
 ```
 
-Apply these parameters without rebooting:
+2. **Apply the sysctl settings immediately without rebooting:**
 
 ```bash
 sudo sysctl --system
 ```
 
-### 4. Install CRI-O Container Runtime
+---
 
-1. Install the required packages:
+### 2.4 Install CRI-O Container Runtime
+
+Kubernetes uses container runtimes to run the actual containers. Here, we will use **CRI-O**, a lightweight container runtime optimized for Kubernetes.
+
+#### Step-by-step Breakdown:
+
+1. **Update your package list and install necessary dependencies:**
 
 ```bash
 sudo apt-get update -y
 sudo apt-get install -y software-properties-common curl apt-transport-https ca-certificates gpg
 ```
 
-2. Add the CRI-O repository and install it:
+2. **Add the CRI-O repository GPG key to your system:**
 
 ```bash
 sudo curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/prerelease:/main/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
+```
+
+3. **Add the CRI-O repository to your system:**
+
+```bash
 echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.io/addons:/cri-o:/prerelease:/main/deb/ /" | sudo tee /etc/apt/sources.list.d/cri-o.list
+```
+
+4. **Update your package list and install CRI-O:**
+
+```bash
 sudo apt-get update -y
 sudo apt-get install -y cri-o
 ```
 
-3. Start and enable the CRI-O service:
+5. **Enable and start the CRI-O service:**
 
 ```bash
 sudo systemctl daemon-reload
@@ -92,21 +145,39 @@ sudo systemctl enable crio --now
 sudo systemctl start crio.service
 ```
 
-### 5. Install Kubernetes (`kubeadm`, `kubelet`, `kubectl`)
+---
 
-1. Add the Kubernetes repository and install the required packages:
+### 2.5 Install Kubernetes (`kubeadm`, `kubelet`, `kubectl`)
+
+These tools are necessary for setting up and managing the Kubernetes cluster:
+
+- **`kubeadm`**: Bootstrap the cluster.
+- **`kubelet`**: Ensure that containers are running on nodes.
+- **`kubectl`**: Interact with the cluster.
+
+#### Step-by-step Breakdown:
+
+1. **Add the Kubernetes GPG key to your system:**
 
 ```bash
 curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
-sudo apt-get update -y
 ```
+
+2. **Add the Kubernetes repository to your sources list:**
+
 ```bash
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+```
+
+3. **Update your package list and install Kubernetes tools:**
+
+```bash
+sudo apt-get update -y
 sudo apt-get install -y kubelet kubeadm kubectl
 sudo apt-mark hold kubelet kubeadm kubectl
 ```
 
-2. Enable and start `kubelet`:
+4. **Enable and start the `kubelet` service:**
 
 ```bash
 sudo systemctl enable --now kubelet
@@ -115,29 +186,35 @@ sudo systemctl start kubelet
 
 ---
 
-## Steps for the Master Node
+## 🖥️ Step 3: Configure the Master Node
 
-### 6. Pull Kubernetes Control Plane Images
+Now, follow these steps **only on the master node**.
 
-Before initializing the master node, pull the necessary Kubernetes images:
+### 3.1 Pull Kubernetes Control Plane Images
+
+Before initializing the control plane on the master node, Kubernetes images need to be pulled.
 
 ```bash
 sudo kubeadm config images pull
 ```
 
-### 7. Initialize the Master Node
+---
 
-Run the following command to initialize the Kubernetes control plane on the master node:
+### 3.2 Initialize the Master Node
+
+Initialize the Kubernetes control plane on the master node using the following command:
 
 ```bash
 sudo kubeadm init
 ```
 
-After initialization, you will receive a join command with a token that the worker node will use to join the cluster. Keep this information for later.
+After the initialization, you will be given a join command with a token. This token will be needed to join the worker nodes to the master.
 
-### 8. Configure `kubectl` on the Master Node
+---
 
-Set up `kubectl` for the non-root user on the master node to manage the cluster:
+### 3.3 Configure `kubectl` for the Master Node
+
+After the master node is initialized, you need to set up `kubectl` to interact with the cluster from the master node.
 
 ```bash
 mkdir -p "$HOME"/.kube
@@ -145,66 +222,59 @@ sudo cp -i /etc/kubernetes/admin.conf "$HOME"/.kube/config
 sudo chown "$(id -u)":"$(id -g)" "$HOME"/.kube/config
 ```
 
-### 9. Install Calico Network Plugin
+---
 
-Install Calico, which will enable network communication between the Kubernetes pods:
+### 3.4 Install Calico Network Plugin
+
+Kubernetes needs a networking plugin to manage pod communication. Here, we will install **Calico** as the network plugin.
 
 ```bash
 kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.0/manifests/calico.yaml
 ```
 
-### 10. Generate the Join Command for Worker Nodes
+---
 
-Create a new join token and print the join command for the worker node(s):
+### 3.5 Generate the Join Command for Worker Nodes
+
+If you didn’t save the initial join token, you can generate a new one with the following command:
 
 ```bash
 kubeadm token create --print-join-command
 ```
 
-The command will look something like this:
-
-```bash
-kubeadm join <master-ip>:6443 --token <token> --discovery-token-ca-cert-hash sha256:<hash>
-```
-
-Copy this command and use it on the worker node(s).
+Copy this join command as it will be needed on the worker nodes.
 
 ---
 
-## Steps for Worker Node(s)
+## 🖥️ Step 4: Configure the Worker Node(s)
 
-### 11. Perform Pre-flight Checks
+Perform these steps **on each worker node**.
 
-On each worker node, reset any previous Kubernetes setup to ensure a clean installation:
+### 4.1 Reset Pre-flight Checks
+
+Before joining the worker node to the master, reset any previous Kubernetes setup to ensure a clean installation:
 
 ```bash
 sudo kubeadm reset pre-flight checks
 ```
 
-### 12. Join the Worker Node to the Master Node
+---
 
-On each worker node, use the join command received from the master node. Make sure to append `--v=5` for verbose output:
+### 4.2 Join the Worker Node to the Master Node
+
+Use the join command provided by the master node to add the worker node to the cluster:
 
 ```bash
-sudo kubeadm join <master-ip>:6443 --token <token> --discovery-token-ca-cert-hash sha256:<hash> --v=5
-```
+sudo kubeadm join <master-ip>:6443 --token <token> --discovery-token-ca-cert-hash sha256:<hash> --v=
 
-This command joins the worker node to the Kubernetes cluster.
+5
+```
 
 ---
 
-## Verification
+## 🚀 Conclusion
 
-### 13. Verify the Cluster on the Master Node
+You’ve now successfully set up a Kubernetes cluster using `kubeadm` on Azure VMs with CRI-O and Calico for networking. You can use `kubectl get nodes` on the master node to verify that your worker nodes have successfully joined the cluster.
 
-After the worker node(s) join the cluster, verify the setup on the master node by running:
+This basic setup is ready for deploying applications, scaling your services, and exploring Kubernetes further!
 
-```bash
-kubectl get nodes
-```
-
-You should see both the master and worker nodes in `Ready` status.
-
----
-
-This completes the Kubernetes cluster setup using `kubeadm` with CRI-O on both master and worker nodes.
